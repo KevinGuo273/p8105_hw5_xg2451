@@ -135,16 +135,129 @@ ggplot(power_results) +
 
 From the plot above, we can see when the effect size is small (<4 in this case), the sample average of μ̂ which the null is rejected is different from the true value of μ. When the effect size gets larger (>=4 in this case), the sample average of μ̂ which the null is rejected is approximately equal to the true value of μ. This is because the power is increasing as the effect size increases.
 
+## Problem 3
+#### Load Homicide Dataset
+```{r}
+library(purrr)
+homicide_data <- read.csv("data/homicide-data.csv")
+row <- nrow(homicide_data)
+col <- ncol(homicide_data)
+colname <- colnames(homicide_data)
+```
 
+**Description of the dataset:**
 
+- The dataset contains information on homicides in 50 large U.S. cities from 2007 to 2017. Each row represents a single homicide case with the columns `r colname`.
+- There are `r row` rows of observations (homicide) and `r col` columns of variables (homicide features).
 
+#### Create `city_state` Variable
+```{r}
+# Create a city_state variable
+homicide_data <- homicide_data %>%
+  mutate(city_state = paste(city, state, sep = ", "))
+```
 
+#### Summarize Homicides Within Cities
+```{r}
+# Unsolved dispositions
+unsolved_dispositions <- c("Closed without arrest", "Open/No arrest")
 
+# Summarize data within cities
+city_summary <- homicide_data %>%
+  group_by(city_state) %>%
+  summarize(
+    total_homicides = n(),
+    unsolved_homicides = sum(disposition %in% unsolved_dispositions)
+  ) %>%
+  ungroup()
 
+city_summary
 
+```
 
+#### Proportion Test for Baltimore, MD
+```{r}
+# Filter data for Baltimore, MD
+baltimore_data <- homicide_data %>%
+  filter(city_state == "Baltimore, MD")
 
+# Calculate total and unsolved homicides
+total_baltimore <- nrow(baltimore_data)
+unsolved_baltimore <- sum(baltimore_data$disposition %in% unsolved_dispositions)
 
+# Perform proportion test
+prop_test_baltimore <- prop.test(
+  x = unsolved_baltimore,
+  n = total_baltimore
+)
+
+# Tidy the output
+tidy_baltimore <- broom::tidy(prop_test_baltimore)
+
+# Extract estimated proportion and confidence intervals
+baltimore_estimate <- tidy_baltimore$estimate
+baltimore_conf_low <- tidy_baltimore$conf.low
+baltimore_conf_high <- tidy_baltimore$conf.high
+
+```
+The estimated proportion of unsolved homicides in Baltimore, MD is `r baltimore_estimate` and the 95% confidence interval is (`r baltimore_conf_low`, `r baltimore_conf_high`).
+
+#### Proportion Tests for Each City
+```{r warning = FALSE}
+# Perform proportion test for each city
+city_prop_test <- homicide_data %>%
+  group_by(city_state) %>%
+  summarize(
+    total_homicides = n(),
+    unsolved_homicides = sum(disposition %in% unsolved_dispositions)
+  ) %>%
+  mutate(
+    prop_test = map2(
+      unsolved_homicides,
+      total_homicides,
+      ~ prop.test(x = .x, n = .y)
+    ),
+    tidy_test = map(prop_test, broom::tidy)
+  ) %>%
+  unnest(cols = c(tidy_test))
+
+# Extract relevant columns
+city_results <- city_prop_test %>%
+  select(
+    city_state,
+    total_homicides,
+    unsolved_homicides,
+    estimate,
+    conf.low,
+    conf.high
+  )
+
+# Arrange cities by estimated proportion
+city_results <- city_results %>%
+  arrange(desc(estimate))
+
+city_results
+
+```
+
+- Chicago has the most total homicides (5535) and the most unsolved homicides(4073).
+- Tulsa in Alabama has only 1 case of homicide and 0 unsolved homicide.
+
+#### Plot the Estimates and Confidence Intervals for Each City
+```{r}
+# Plot the estimates and confidence intervals
+ggplot(city_results, aes(x = reorder(city_state, estimate), y = estimate)) +
+  geom_point(color = "blue") +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.4, color = "blue") +
+  coord_flip() +
+  labs(
+    title = "Proportion of Unsolved Homicides by City",
+    x = "City",
+    y = "Estimated Proportion of Unsolved Homicides"
+  ) +
+  theme_minimal()
+
+```
 
 
 
